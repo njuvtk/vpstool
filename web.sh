@@ -7,9 +7,11 @@ function install_deploy() {
 #!/bin/bash
 set -e
 
-echo "🚀 安装依赖..."
+echo "🚀 更新软件包列表..."
 apt update
-apt install -y git curl wget debian-keyring debian-archive-keyring gnupg apt-transport-https
+
+echo "📦 安装必要工具..."
+apt install -y git curl wget
 
 echo "📦 安装 Caddy..."
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | tee /etc/apt/trusted.gpg.d/caddy.gpg > /dev/null
