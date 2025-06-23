@@ -3,7 +3,7 @@ set -e
 
 function install_deploy() {
   echo "开始安装部署流程..."
-  bash <(cat <<'DEPLOY_EOF'
+  bash <'DEPLOY_EOF' <<'EOF'
 #!/bin/bash
 set -e
 
@@ -11,12 +11,15 @@ echo "🚀 更新软件包列表..."
 apt update
 
 echo "📦 安装必要工具..."
-apt install -y git curl wget
+apt install -y git curl wget jq gnupg2
 
-echo "📦 安装 Caddy..."
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | tee /etc/apt/trusted.gpg.d/caddy.gpg > /dev/null
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
-apt update && apt install caddy -y
+echo "📦 导入 Caddy 公钥并添加软件源..."
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor | tee /usr/share/keyrings/caddy-archive-keyring.gpg > /dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/caddy-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" > /etc/apt/sources.list.d/caddy-stable.list
+
+apt update
+apt install -y caddy
 
 echo "🌐 克隆网页仓库..."
 read -p "请输入你的 Git 仓库地址（如 https://github.com/xxx/xxx.git）: " GIT_REPO
@@ -38,9 +41,10 @@ cloudflared login
 read -p "请输入要绑定的子域名前缀（如 blog）: " SUBDOMAIN
 read -p "请输入 Tunnel 名称（如 mytunnel）: " TUNNEL_NAME
 
-cloudflared tunnel create "$TUNNEL_NAME"
-TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
-CRED_FILE="/root/.cloudflared/${TUNNEL_ID}.json"
+echo "⌛ 创建 Cloudflare Tunnel..."
+cloudflared tunnel create "$TUNNEL_NAME" --output json > tunnel.json
+TUNNEL_ID=$(jq -r '.TunnelID' tunnel.json)
+CRED_FILE="$HOME/.cloudflared/${TUNNEL_ID}.json"
 
 BASE_DOMAIN=$(grep -oP '(?<=CN=)[^ ]+' ~/.cloudflared/cert.pem)
 DOMAIN="${SUBDOMAIN}.${BASE_DOMAIN}"
@@ -110,8 +114,7 @@ echo "🎉 部署完成！访问地址：https://${DOMAIN}"
 echo "📁 网站目录：$WEB_ROOT"
 echo "📜 访问日志：/var/log/caddy/access.log"
 echo "🛡️ IP 限流：每 10 秒最多 5 次访问"
-DEPLOY_EOF
-)
+EOF
 }
 
 function uninstall_cleanup() {
