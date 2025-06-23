@@ -1,10 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🌐 修复 DNS 配置..."
-echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" > /etc/resolv.conf
-
-echo "🧱 安装 Caddy（手动 .deb 包）..."
+echo "🧱 安装 Caddy（使用 .deb 包）..."
 wget -q https://github.com/caddyserver/caddy/releases/latest/download/caddy_2.7.6_linux_amd64.deb -O caddy.deb
 dpkg -i caddy.deb
 
