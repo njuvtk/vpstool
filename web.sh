@@ -3,8 +3,7 @@ set -e
 
 function install_deploy() {
   echo "开始安装部署流程..."
-  # 直接把之前部署脚本复制进来即可，或者调用外部脚本
-  bash <(cat <<'EOF'
+  bash <(cat <<'DEPLOY_EOF'
 #!/bin/bash
 set -e
 
@@ -45,7 +44,7 @@ BASE_DOMAIN=$(grep -oP '(?<=CN=)[^ ]+' ~/.cloudflared/cert.pem)
 DOMAIN="${SUBDOMAIN}.${BASE_DOMAIN}"
 
 echo "⚙️ 配置 Caddy（限速 + 日志）..."
-cat <<EOF2 > /etc/caddy/Caddyfile
+cat <<CADDY_EOF > /etc/caddy/Caddyfile
 :80 {
     root * $WEB_ROOT
     encode gzip
@@ -63,14 +62,14 @@ cat <<EOF2 > /etc/caddy/Caddyfile
         format console
     }
 }
-EOF2
+CADDY_EOF
 
 mkdir -p /var/log/caddy
 systemctl restart caddy
 
 echo "📝 写入 cloudflared 配置文件..."
 mkdir -p ~/.cloudflared
-cat <<EOF2 > ~/.cloudflared/config.yml
+cat <<CONFIG_EOF > ~/.cloudflared/config.yml
 tunnel: $TUNNEL_ID
 credentials-file: $CRED_FILE
 
@@ -78,12 +77,12 @@ ingress:
   - hostname: $DOMAIN
     service: http://localhost:80
   - service: http_status:404
-EOF2
+CONFIG_EOF
 
 cloudflared tunnel route dns "$TUNNEL_NAME" "$SUBDOMAIN"
 
 echo "📌 配置 cloudflared 后台运行..."
-cat <<EOF2 > /etc/systemd/system/cloudflared.service
+cat <<SERVICE_EOF > /etc/systemd/system/cloudflared.service
 [Unit]
 Description=Cloudflare Tunnel
 After=network.target
@@ -95,7 +94,7 @@ User=root
 
 [Install]
 WantedBy=multi-user.target
-EOF2
+SERVICE_EOF
 
 systemctl daemon-reexec
 systemctl daemon-reload
@@ -109,7 +108,8 @@ echo "🎉 部署完成！访问地址：https://${DOMAIN}"
 echo "📁 网站目录：$WEB_ROOT"
 echo "📜 访问日志：/var/log/caddy/access.log"
 echo "🛡️ IP 限流：每 10 秒最多 5 次访问"
-EOF
+DEPLOY_EOF
+)
 }
 
 function uninstall_cleanup() {
@@ -180,7 +180,6 @@ function show_menu() {
   esac
 }
 
-# 主程序入口
 while true; do
   show_menu
 done
