@@ -1,20 +1,18 @@
 #!/bin/bash
 set -e
 
-echo "🚀 开始部署 Cloudflare Tunnel + Caddy 静态网站"
+echo "🌐 修复 DNS 配置..."
+echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" > /etc/resolv.conf
 
-# 👉 1. 安装依赖
-echo "📦 安装 Caddy..."
-apt update
-apt install -y curl wget
-
-curl -fsSL https://get.caddyserver.com | bash
+echo "🧱 安装 Caddy（手动 .deb 包）..."
+wget -q https://github.com/caddyserver/caddy/releases/latest/download/caddy_2.7.6_linux_amd64.deb -O caddy.deb
+dpkg -i caddy.deb
 
 echo "📁 创建网站目录..."
 mkdir -p /var/www/mysite
-echo "<h1>Hello from NAT via Cloudflare Tunnel</h1>" > /var/www/mysite/index.html
+echo "<h1>Hello from NAT via Tunnel</h1>" > /var/www/mysite/index.html
 
-echo "📝 配置 Caddy（本地监听 80）..."
+echo "📝 写入 Caddy 配置..."
 cat <<EOF > /etc/caddy/Caddyfile
 :80 {
     root * /var/www/mysite
@@ -24,29 +22,23 @@ EOF
 
 systemctl restart caddy
 
-# 👉 2. 安装 cloudflared
 echo "☁️ 安装 cloudflared..."
-wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-dpkg -i cloudflared-linux-amd64.deb || true # 忽略重复安装的错误
+wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -O cloudflared.deb
+dpkg -i cloudflared.deb || true
 
-# 👉 3. 登录 Cloudflare
-echo "🌐 将打开浏览器登录 Cloudflare，请选择你的域名授权"
+echo "🌐 登录 Cloudflare 并授权域名..."
 cloudflared login
 
-# 👉 4. 输入你的域名和 tunnel 名称
 read -p "请输入你要绑定的完整域名（如 blog.example.com）: " DOMAIN
-read -p "请输入 tunnel 名称（比如 mytunnel）: " TUNNEL_NAME
+read -p "请输入 tunnel 名称（任意英文，如 mytunnel）: " TUNNEL_NAME
 
-echo "📡 创建 Tunnel：$TUNNEL_NAME"
+echo "🚧 创建 Tunnel..."
 cloudflared tunnel create "$TUNNEL_NAME"
-
-# 获取 tunnel ID
 TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
 CRED_FILE="/root/.cloudflared/${TUNNEL_ID}.json"
 
-echo "🛠️ 写入配置文件 ~/.cloudflared/config.yml"
+echo "⚙️ 写入 cloudflared 配置文件..."
 mkdir -p ~/.cloudflared
-
 cat <<EOF > ~/.cloudflared/config.yml
 tunnel: $TUNNEL_ID
 credentials-file: $CRED_FILE
@@ -57,10 +49,10 @@ ingress:
   - service: http_status:404
 EOF
 
-echo "🔗 绑定 DNS：$DOMAIN"
+echo "🔗 绑定域名到 Tunnel..."
 cloudflared tunnel route dns "$TUNNEL_NAME" "$DOMAIN"
 
-echo "📌 创建 systemd 启动服务..."
+echo "🛠️ 配置 systemd 后台服务..."
 cat <<EOF > /etc/systemd/system/cloudflared.service
 [Unit]
 Description=Cloudflare Tunnel
@@ -79,4 +71,4 @@ systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable --now cloudflared
 
-echo "✅ 部署完成！你的网站已上线：https://$DOMAIN"
+echo "🎉 部署完成！你的网站已上线：https://$DOMAIN"
