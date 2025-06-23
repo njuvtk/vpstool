@@ -1,28 +1,31 @@
 #!/bin/bash
 set -e
 
+function install_deploy() {
+  echo "开始安装部署流程..."
+  # 直接把之前部署脚本复制进来即可，或者调用外部脚本
+  bash <(cat <<'EOF'
+#!/bin/bash
+set -e
+
 echo "🚀 安装依赖..."
 apt update
 apt install -y git curl wget debian-keyring debian-archive-keyring gnupg apt-transport-https
 
-# ========= 安装 Caddy =========
 echo "📦 安装 Caddy..."
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | tee /etc/apt/trusted.gpg.d/caddy.gpg > /dev/null
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
 apt update && apt install caddy -y
 
-# ========= 拉取 Git 网页 =========
 echo "🌐 克隆网页仓库..."
 read -p "请输入你的 Git 仓库地址（如 https://github.com/xxx/xxx.git）: " GIT_REPO
 WEB_ROOT="/var/www/mysite"
 git clone --depth=1 "$GIT_REPO" "$WEB_ROOT" || echo "仓库已存在，跳过"
 
-# ========= 安装 cloudflared =========
 echo "☁️ 安装 cloudflared..."
 wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -O cloudflared.deb
 dpkg -i cloudflared.deb || true
 
-# ========= 登录提示 =========
 echo
 echo "🌐 即将打开浏览器进行 Cloudflare 账户授权"
 echo "👉 请在浏览器中选择你要绑定的主域名（如 example.com）"
@@ -31,22 +34,18 @@ echo "✅ 登录成功后，回到终端继续执行即可"
 echo
 cloudflared login
 
-# ========= 获取子域名前缀 + Tunnel名 =========
 read -p "请输入要绑定的子域名前缀（如 blog）: " SUBDOMAIN
 read -p "请输入 Tunnel 名称（如 mytunnel）: " TUNNEL_NAME
 
-# ========= 创建 Tunnel =========
 cloudflared tunnel create "$TUNNEL_NAME"
 TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
 CRED_FILE="/root/.cloudflared/${TUNNEL_ID}.json"
 
-# 获取主域名（从 cert.pem 提取）
 BASE_DOMAIN=$(grep -oP '(?<=CN=)[^ ]+' ~/.cloudflared/cert.pem)
 DOMAIN="${SUBDOMAIN}.${BASE_DOMAIN}"
 
-# ========= 写入 Caddy 配置 =========
 echo "⚙️ 配置 Caddy（限速 + 日志）..."
-cat <<EOF > /etc/caddy/Caddyfile
+cat <<EOF2 > /etc/caddy/Caddyfile
 :80 {
     root * $WEB_ROOT
     encode gzip
@@ -64,15 +63,14 @@ cat <<EOF > /etc/caddy/Caddyfile
         format console
     }
 }
-EOF
+EOF2
 
 mkdir -p /var/log/caddy
 systemctl restart caddy
 
-# ========= 写入 cloudflared 配置文件 =========
 echo "📝 写入 cloudflared 配置文件..."
 mkdir -p ~/.cloudflared
-cat <<EOF > ~/.cloudflared/config.yml
+cat <<EOF2 > ~/.cloudflared/config.yml
 tunnel: $TUNNEL_ID
 credentials-file: $CRED_FILE
 
@@ -80,14 +78,12 @@ ingress:
   - hostname: $DOMAIN
     service: http://localhost:80
   - service: http_status:404
-EOF
+EOF2
 
-# ========= 正确方式绑定子域名（只填前缀） =========
 cloudflared tunnel route dns "$TUNNEL_NAME" "$SUBDOMAIN"
 
-# ========= 写入 systemd 后台服务 =========
 echo "📌 配置 cloudflared 后台运行..."
-cat <<EOF > /etc/systemd/system/cloudflared.service
+cat <<EOF2 > /etc/systemd/system/cloudflared.service
 [Unit]
 Description=Cloudflare Tunnel
 After=network.target
@@ -99,21 +95,92 @@ User=root
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOF2
 
 systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable --now cloudflared
 
-# ========= 设置定时网页更新任务 =========
 echo "⏱️ 设置网页每日自动更新（cron）..."
 (crontab -l 2>/dev/null; echo "0 */12 * * * cd $WEB_ROOT && git pull --quiet") | crontab -
 
-# ========= 完成提示 =========
 echo
-echo "🎉 部署完成！你的网站现在可以通过以下地址访问："
-echo "🌐 https://${DOMAIN}"
+echo "🎉 部署完成！访问地址：https://${DOMAIN}"
 echo "📁 网站目录：$WEB_ROOT"
 echo "📜 访问日志：/var/log/caddy/access.log"
-echo "🛡️ 每 IP 10 秒内限访问 5 次（Caddy rate_limit）"
-echo
+echo "🛡️ IP 限流：每 10 秒最多 5 次访问"
+EOF
+}
+
+function uninstall_cleanup() {
+  echo "⚠️ 警告：该操作将永久删除部署内容及 Cloudflare Tunnel 与 DNS 配置。"
+  read -p "输入 YES 确认卸载: " CONFIRM
+  if [[ "$CONFIRM" != "YES" ]]; then
+    echo "❌ 取消卸载。"
+    exit 1
+  fi
+
+  echo "🛑 停止 cloudflared..."
+  systemctl stop cloudflared || true
+  systemctl disable cloudflared || true
+  rm -f /etc/systemd/system/cloudflared.service
+
+  echo "🗑️ 删除 cloudflared 配置和证书..."
+  rm -rf ~/.cloudflared
+  rm -f cloudflared.deb
+  rm -f /usr/local/bin/cloudflared
+
+  echo "🛑 停止并卸载 Caddy..."
+  systemctl stop caddy || true
+  systemctl disable caddy || true
+  apt purge -y caddy
+  rm -rf /etc/caddy
+  rm -rf /var/log/caddy
+
+  echo "🗑️ 删除网页目录..."
+  rm -rf /var/www/mysite
+
+  echo "🧹 清除 Git 自动更新任务..."
+  crontab -l 2>/dev/null | grep -v 'git pull' | crontab - || true
+
+  read -p "请输入你要删除的 Tunnel 名称（如 mytunnel）: " TUNNEL_NAME
+  read -p "请输入绑定的子域名前缀（如 blog）: " SUBDOMAIN
+
+  if [ -f "$HOME/.cloudflared/cert.pem" ]; then
+    BASE_DOMAIN=$(grep -oP '(?<=CN=)[^ ]+' ~/.cloudflared/cert.pem)
+    DOMAIN="${SUBDOMAIN}.${BASE_DOMAIN}"
+
+    echo "🌐 尝试删除 DNS 记录：$DOMAIN"
+    cloudflared tunnel route dns delete "$TUNNEL_NAME" "$SUBDOMAIN" || echo "⚠️ DNS 删除失败"
+
+    echo "💀 删除 Cloudflare Tunnel：$TUNNEL_NAME"
+    cloudflared tunnel delete "$TUNNEL_NAME" || echo "⚠️ Tunnel 删除失败"
+  else
+    echo "⚠️ 未找到 Cloudflare 认证凭证，跳过云端清理"
+  fi
+
+  echo "✅ 卸载完成。"
+}
+
+function show_menu() {
+  clear
+  echo "=========================="
+  echo "  NAT 小鸡管理脚本菜单"
+  echo "=========================="
+  echo "1) 一键安装部署"
+  echo "2) 一键卸载清理"
+  echo "3) 退出"
+  echo
+  read -p "请选择操作 [1-3]: " choice
+  case "$choice" in
+    1) install_deploy ;;
+    2) uninstall_cleanup ;;
+    3) echo "退出脚本"; exit 0 ;;
+    *) echo "无效选项"; sleep 1; show_menu ;;
+  esac
+}
+
+# 主程序入口
+while true; do
+  show_menu
+done
