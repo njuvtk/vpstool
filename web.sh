@@ -3,7 +3,7 @@ set -e
 
 function install_deploy() {
   echo "开始安装部署流程..."
-  bash <'DEPLOY_EOF' <<'EOF'
+  bash <<'DEPLOY_EOF'
 #!/bin/bash
 set -e
 
@@ -114,7 +114,7 @@ echo "🎉 部署完成！访问地址：https://${DOMAIN}"
 echo "📁 网站目录：$WEB_ROOT"
 echo "📜 访问日志：/var/log/caddy/access.log"
 echo "🛡️ IP 限流：每 10 秒最多 5 次访问"
-EOF
+DEPLOY_EOF
 }
 
 function uninstall_cleanup() {
@@ -122,7 +122,7 @@ function uninstall_cleanup() {
   read -p "输入 YES 确认卸载: " CONFIRM
   if [[ "$CONFIRM" != "YES" ]]; then
     echo "❌ 取消卸载。"
-    exit 1
+    return
   fi
 
   echo "🛑 停止 cloudflared..."
