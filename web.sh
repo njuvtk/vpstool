@@ -79,9 +79,33 @@ function clone_site_repo() {
         git clone "$GIT_REPO" "$SITE_DIR"
     fi
 
-    echo "⏰ 配置定时更新任务..."
+    echo "🔍 检测 cron 服务状态..."
+    if ! systemctl is-active --quiet cron; then
+        echo "⚠️ cron 未运行，尝试启动..."
+        systemctl start cron
+        sleep 2
+        if systemctl is-active --quiet cron; then
+            echo "✅ cron 启动成功"
+        else
+            echo "❌ cron 启动失败，请检查日志"
+            exit 1
+        fi
+    else
+        echo "✅ cron 正在运行"
+    fi
+
+    echo "⏰ 配置定时 Git 拉取任务..."
     echo "*/10 * * * * root cd $SITE_DIR && git pull --quiet" > "$CRON_FILE"
     chmod 644 "$CRON_FILE"
+
+    # 检查是否成功写入
+    if grep -q "git pull" "$CRON_FILE"; then
+        echo "✅ 定时任务配置成功："
+        cat "$CRON_FILE"
+    else
+        echo "❌ 定时任务配置失败，请检查权限和路径"
+        exit 1
+    fi
 }
 
 function install_cloudflared() {
@@ -103,13 +127,13 @@ function configure_cloudflare_tunnel() {
     mkdir -p ~/.cloudflared
     TUNNEL_ID=$(cat ~/.cloudflared/*.json | grep -o '"TunnelID":"[^"]\+"' | cut -d '"' -f4)
     cat > ~/.cloudflared/config.yml <<EOF
-  tunnel: $TUNNEL_ID
-  credentials-file: /root/.cloudflared/$TUNNEL_ID.json
+tunnel: $TUNNEL_ID
+credentials-file: /root/.cloudflared/$TUNNEL_ID.json
 
-  ingress:
-    - hostname: $FULL_DOMAIN
-      service: http://localhost:80
-    - service: http_status:404
+ingress:
+  - hostname: $FULL_DOMAIN
+    service: http://localhost:80
+  - service: http_status:404
 EOF
 
     cloudflared tunnel route dns "$TUNNEL_NAME" "$SUBDOMAIN"
