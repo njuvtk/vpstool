@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/njuvtk/vpstool/main/web.sh | bash
 
 > 国内
 ```bash
-wget "https://hk.gh-proxy.com/https://raw.githubusercontent.com/njuvtk/vpstool/main/web.sh"
+wget "https://gh-proxy.com/https://raw.githubusercontent.com/njuvtk/vpstool/main/web.sh"
 
 bash web.sh
 ```
@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/njuvtk/vpstool/main/install_nvm_cn.
 
 > 国内
 ```bash
-wget "https://hk.gh-proxy.com/https://raw.githubusercontent.com/njuvtk/vpstool/main/install_nvm_cn.sh"
+wget "https://gh-proxy.com/https://raw.githubusercontent.com/njuvtk/vpstool/main/install_nvm_cn.sh"
 
 bash install_nvm_cn.sh
 ```
