@@ -21,6 +21,7 @@ detect_os() {
 install_mariadb() {
     echo "=== 检查MariaDB状态 ==="
     
+    # 不同系统的MariaDB客户端命令可能不同
     if command_exists mysql || command_exists mariadb; then
         echo "MariaDB已安装"
         read -p "是否重新安装MariaDB? (y/N) " -n 1 -r
@@ -33,13 +34,20 @@ install_mariadb() {
 
     echo "开始安装MariaDB..."
     
+    # 根据操作系统选择安装方式
     if [[ $OS == *"Debian"* || $OS == *"Ubuntu"* ]]; then
+        # Debian/Ubuntu 系统
         sudo apt update
         sudo apt install -y mariadb-server
+        
+        # 服务管理
         sudo systemctl start mariadb
         sudo systemctl enable mariadb
     elif [[ $OS == *"CentOS"* && $VER == "7" ]]; then
+        # CentOS 7 系统
         sudo yum install -y mariadb-server mariadb
+        
+        # 服务管理
         sudo systemctl start mariadb
         sudo systemctl enable mariadb
     else
@@ -47,6 +55,7 @@ install_mariadb() {
         return 1
     fi
     
+    # 运行安全配置（带详细交互说明）
     echo -e "\n===== MariaDB安全配置向导即将启动 ====="
     echo "生产环境强烈建议完成所有安全配置步骤，请仔细阅读每个提示！"
     echo -e "\n配置步骤说明："
@@ -61,6 +70,7 @@ install_mariadb() {
     echo "7. 重新加载权限表：输入 'y' 使所有配置立即生效"
     read -p "按Enter键进入安全配置..."
     
+    # 不同系统可能使用mysql_secure_installation或mariadb-secure-installation
     if command_exists mysql_secure_installation; then
         sudo mysql_secure_installation
     elif command_exists mariadb-secure-installation; then
@@ -70,6 +80,7 @@ install_mariadb() {
         return 1
     fi
     
+    # 验证安装
     if command_exists mysql || command_exists mariadb; then
         echo "MariaDB安装成功"
     else
@@ -94,14 +105,21 @@ install_redis() {
 
     echo "开始安装Redis..."
     
+    # 根据操作系统选择安装方式
     if [[ $OS == *"Debian"* || $OS == *"Ubuntu"* ]]; then
+        # Debian/Ubuntu 系统
         sudo apt update
         sudo apt install -y redis-server
+        
+        # 服务管理
         sudo systemctl start redis-server
         sudo systemctl enable redis-server
     elif [[ $OS == *"CentOS"* && $VER == "7" ]]; then
-        sudo yum install -y epel-release
+        # CentOS 7 系统
+        sudo yum install -y epel-release  # Redis在EPEL源中
         sudo yum install -y redis
+        
+        # 服务管理
         sudo systemctl start redis
         sudo systemctl enable redis
     else
@@ -109,6 +127,7 @@ install_redis() {
         return 1
     fi
     
+    # 验证安装
     if redis-cli ping | grep -q "PONG"; then
         echo "Redis安装成功"
     else
